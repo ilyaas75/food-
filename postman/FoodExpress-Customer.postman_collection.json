@@ -1,0 +1,96 @@
+{
+  "info": {
+    "_postman_id": "foodexpress-customer-collection",
+    "name": "FoodExpress — Customer (User)",
+    "description": "Customer flow. Run requests top to bottom.\n\nSeed account: customer@food.com / password123",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "1. Register Customer",
+      "request": {
+        "auth": { "type": "noauth" },
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"Test Customer\",\n  \"email\": \"newcustomer@food.com\",\n  \"password\": \"123456\",\n  \"role\": \"customer\",\n  \"phone\": \"6899788\"\n}"
+        },
+        "url": "{{baseUrl}}/api/auth/register",
+        "description": "role MUST be \"customer\" (not admin). Use a NEW email each time or you get 409."
+      }
+    },
+    {
+      "name": "2. Login Customer",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "const res = pm.response.json();",
+              "if (res.token) {",
+              "  pm.environment.set('customerToken', res.token);",
+              "  pm.test('Customer token saved', () => pm.expect(res.role).to.eql('customer'));",
+              "}"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "auth": { "type": "noauth" },
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"customer@food.com\",\n  \"password\": \"password123\"\n}"
+        },
+        "url": "{{baseUrl}}/api/auth/login"
+      }
+    },
+    {
+      "name": "3. Add to Cart",
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [{ "key": "token", "value": "{{customerToken}}", "type": "string" }]
+        },
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"foodItemId\": \"{{foodItemId}}\",\n  \"quantity\": 1\n}"
+        },
+        "url": "{{baseUrl}}/api/cart/items",
+        "description": "Run Admin collection Get Food Items first to set foodItemId, or copy ID from GET /api/food-items"
+      }
+    },
+    {
+      "name": "4. Checkout",
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [{ "key": "token", "value": "{{customerToken}}", "type": "string" }]
+        },
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"deliveryAddress\": {\n    \"street\": \"123 Main St\",\n    \"city\": \"Mogadishu\",\n    \"state\": \"Banaadir\",\n    \"zipCode\": \"001\",\n    \"country\": \"Somalia\"\n  },\n  \"paymentMethod\": \"cash_on_delivery\"\n}"
+        },
+        "url": "{{baseUrl}}/api/orders/checkout"
+      }
+    },
+    {
+      "name": "5. My Orders",
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [{ "key": "token", "value": "{{customerToken}}", "type": "string" }]
+        },
+        "method": "GET",
+        "url": "{{baseUrl}}/api/orders"
+      }
+    }
+  ]
+}

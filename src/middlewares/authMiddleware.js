@@ -1,7 +1,8 @@
-const jwt = require('jsonwebtoken');
-const User = require('../models/User');
+import jwt from 'jsonwebtoken';
+import User from '../features/users/user.model.js';
+import { ROLES } from '../constants/roles.js';
 
-const protect = async (req, res, next) => {
+export const protect = async (req, res, next) => {
     let token;
 
     if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
@@ -19,19 +20,23 @@ const protect = async (req, res, next) => {
             res.status(401).json({ message: 'Not authorized, token failed' });
         }
     } else {
-        res.status(401).json({ message: 'Not authorized, no token' });
+        res.status(401).json({
+            message: 'Not authorized, no token',
+            hint: 'Call POST /api/auth/login first, copy the "token" from the response, then add header: Authorization: Bearer <token>',
+        });
     }
 };
 
-const authorize = (...roles) => {
+export const authorize = (...roles) => {
     return (req, res, next) => {
         if (!roles.includes(req.user.role)) {
-            return res.status(403).json({ 
-                message: `User role ${req.user.role} is not authorized to access this route` 
+            return res.status(403).json({
+                message: `User role "${req.user.role}" is not authorized to access this route`,
             });
         }
         next();
     };
 };
 
-module.exports = { protect, authorize };
+export const customerOnly = authorize(ROLES.CUSTOMER);
+export const adminOnly = authorize(ROLES.ADMIN);

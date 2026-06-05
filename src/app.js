@@ -1,27 +1,48 @@
-const express = require('express');
-const cors = require('cors');
-const morgan = require('morgan');
+import express from 'express';
+import cors from 'cors';
+import morgan from 'morgan';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import { notFound, errorHandler } from './middlewares/errorMiddleware.js';
 
+// Soo rar jidadka (Load feature routes)
+import authRoutes from './features/users/auth.routes.js';
+import userRoutes from './features/users/user.routes.js';
+import restaurantRoutes from './features/restaurants/restaurant.routes.js';
+import categoryRoutes from './features/categories/category.routes.js';
+import foodItemRoutes from './features/food-items/food-item.routes.js';
+import orderRoutes from './features/orders/order.routes.js';
+import paymentRoutes from './features/payments/payment.routes.js';
+import deliveryRoutes from './features/delivery/delivery.routes.js';
+import cartRoutes from './features/cart/cart.routes.js';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 
-// Middlewares
-app.use(cors());
-app.use(express.json());
-app.use(morgan('dev'));
+// Qalabka dhex-dhexaadiyaha (Middleware setup)
+app.use(cors()); // Oggolow codsiyada dibadda (Allow CORS)
+app.use(express.json()); // U fasir xogta JSON (Parse JSON requests)
+app.use(morgan('dev')); // Diiwaangeli codsiyada (Log requests)
+app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
-// Health check route
+// Jidka lagu hubiyo inuu server-ka shaqeynayo (Health check route)
 app.get('/api/health', (req, res) => {
-    res.status(200).json({ status: 'success', message: 'API is running' });
+    res.status(200).json({ status: 'success', message: 'API-ga waa uu shaqeynayaa (API is running)' });
 });
 
-// Routes
-app.use('/api/auth', require('./routes/authRoutes'));
-app.use('/api/users', require('./routes/userRoutes'));
+// Ku xir jidadka server-ka (Mounting Routes)
+app.use('/api/auth', authRoutes);
+app.use('/api/users', userRoutes);
+app.use('/api/restaurants', restaurantRoutes);
+app.use('/api/categories', categoryRoutes);
+app.use('/api/food-items', foodItemRoutes);
+app.use('/api/orders', orderRoutes);
+app.use('/api/payments', paymentRoutes);
+app.use('/api/delivery', deliveryRoutes);
+app.use('/api/cart', cartRoutes);
 
-const { errorHandler, notFound } = require('./middlewares/errorMiddleware');
-
-// Error handling middleware
+// Qalabka xalinta cilladaha (Error handling middleware)
 app.use(notFound);
 app.use(errorHandler);
 
-module.exports = app;
+export default app;

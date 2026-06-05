@@ -1,0 +1,440 @@
+{
+  "info": {
+    "_postman_id": "foodexpress-admin-collection",
+    "name": "FoodExpress — Admin",
+    "description": "Admin API tests for FoodExpress.\n\nSetup:\n1. npm run dev\n2. npm run seed\n3. Import environment + collection\n4. Run **01 Login Admin** first\n\nAccount: admin@food.com / password123",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [{ "key": "token", "value": "{{adminToken}}", "type": "string" }]
+  },
+  "item": [
+    {
+      "name": "00 Setup",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/health"
+          }
+        }
+      ]
+    },
+    {
+      "name": "01 Auth",
+      "item": [
+        {
+          "name": "Login Admin",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.token) {",
+                  "    pm.environment.set('adminToken', res.token);",
+                  "    pm.test('Admin logged in', () => pm.expect(res.role).to.eql('admin'));",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@food.com\",\n  \"password\": \"password123\"\n}"
+            },
+            "url": "{{baseUrl}}/api/auth/login"
+          }
+        },
+        {
+          "name": "Get Profile",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/users/profile"
+          }
+        },
+        {
+          "name": "Register Customer",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Ila Customer\",\n  \"email\": \"ila@gmail.com\",\n  \"password\": \"123456\",\n  \"role\": \"customer\",\n  \"phone\": \"6899788\"\n}"
+            },
+            "url": "{{baseUrl}}/api/auth/register",
+            "description": "role must be \"customer\" or omitted. Use POST /api/users with role \"admin\" to create admins."
+          }
+        }
+      ]
+    },
+    {
+      "name": "02 Orders",
+      "item": [
+        {
+          "name": "Get All Orders",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const orders = pm.response.json();",
+                  "if (orders.length) pm.environment.set('orderId', orders[0]._id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/orders"
+          }
+        },
+        {
+          "name": "Get Order by ID",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/orders/{{orderId}}"
+          }
+        },
+        {
+          "name": "Update Order Status",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"confirmed\"\n}"
+            },
+            "url": "{{baseUrl}}/api/orders/{{orderId}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "03 Payments",
+      "item": [
+        {
+          "name": "Get All Payments",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/payments"
+          }
+        }
+      ]
+    },
+    {
+      "name": "04 Categories",
+      "item": [
+        {
+          "name": "Get Categories",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const cats = pm.response.json();",
+                  "if (cats.length) pm.environment.set('categoryId', cats[0]._id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "url": "{{baseUrl}}/api/categories"
+          }
+        },
+        {
+          "name": "Create Category",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const cat = pm.response.json();",
+                  "if (cat._id) pm.environment.set('categoryId', cat._id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Desserts\",\n  \"description\": \"Sweet items\"\n}"
+            },
+            "url": "{{baseUrl}}/api/categories"
+          }
+        },
+        {
+          "name": "Delete Category",
+          "request": {
+            "method": "DELETE",
+            "url": "{{baseUrl}}/api/categories/{{categoryId}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "05 Restaurants",
+      "item": [
+        {
+          "name": "Get Restaurants",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const list = pm.response.json();",
+                  "if (list.length) pm.environment.set('restaurantId', list[0]._id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "url": "{{baseUrl}}/api/restaurants"
+          }
+        },
+        {
+          "name": "Create Restaurant",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const r = pm.response.json();",
+                  "if (r._id) pm.environment.set('restaurantId', r._id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"New Kitchen\",\n  \"description\": \"Test restaurant from Postman\",\n  \"address\": { \"city\": \"Mogadishu\" },\n  \"isOpen\": true\n}"
+            },
+            "url": "{{baseUrl}}/api/restaurants"
+          }
+        },
+        {
+          "name": "Update Restaurant",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Somali Kitchen Updated\",\n  \"description\": \"Updated via admin\",\n  \"isOpen\": true\n}"
+            },
+            "url": "{{baseUrl}}/api/restaurants/{{restaurantId}}"
+          }
+        },
+        {
+          "name": "Delete Restaurant",
+          "request": {
+            "method": "DELETE",
+            "url": "{{baseUrl}}/api/restaurants/{{restaurantId}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "06 Food Items",
+      "item": [
+        {
+          "name": "Get Food Items",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const items = pm.response.json();",
+                  "if (items.length) pm.environment.set('foodItemId', items[0]._id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "url": "{{baseUrl}}/api/food-items?restaurantId={{restaurantId}}"
+          }
+        },
+        {
+          "name": "Create Food Item",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const item = pm.response.json();",
+                  "if (item._id) pm.environment.set('foodItemId', item._id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"restaurantId\": \"{{restaurantId}}\",\n  \"categoryId\": \"{{categoryId}}\",\n  \"name\": \"Test Dish\",\n  \"description\": \"Added by admin\",\n  \"price\": 9.99,\n  \"isAvailable\": true\n}"
+            },
+            "url": "{{baseUrl}}/api/food-items"
+          }
+        },
+        {
+          "name": "Delete Food Item",
+          "request": {
+            "method": "DELETE",
+            "url": "{{baseUrl}}/api/food-items/{{foodItemId}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "07 Users",
+      "item": [
+        {
+          "name": "Get All Users",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/users"
+          }
+        },
+        {
+          "name": "Create Customer",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Test Customer\",\n  \"email\": \"testcustomer@food.com\",\n  \"password\": \"password123\",\n  \"role\": \"customer\"\n}"
+            },
+            "url": "{{baseUrl}}/api/users"
+          }
+        },
+        {
+          "name": "Promote User to Admin by Email",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{adminToken}}", "type": "string" }]
+            },
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"role\": \"admin\"\n}"
+            },
+            "url": "{{baseUrl}}/api/users/email/ila@gmail.com/role",
+            "description": "If ila@gmail.com registered as customer, use this to grant admin access."
+          }
+        },
+        {
+          "name": "Create Admin (run Login Admin first)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{adminToken}}", "type": "string" }]
+            },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Ila Admin\",\n  \"email\": \"ila@gmail.com\",\n  \"password\": \"123456\",\n  \"role\": \"admin\",\n  \"phone\": \"6899788\"\n}"
+            },
+            "url": "{{baseUrl}}/api/users",
+            "description": "401 fix: run Login Admin first. Token auto-saves to adminToken."
+          }
+        }
+      ]
+    },
+    {
+      "name": "08 Delivery",
+      "item": [
+        {
+          "name": "Get Deliveries",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/delivery"
+          }
+        },
+        {
+          "name": "Create Delivery",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"orderId\": \"{{orderId}}\",\n  \"vehicleDetails\": \"Motorcycle #12\"\n}"
+            },
+            "url": "{{baseUrl}}/api/delivery"
+          }
+        }
+      ]
+    },
+    {
+      "name": "99 Verify (403 as customer)",
+      "item": [
+        {
+          "name": "Login Customer (save token)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.token) pm.environment.set('customerToken', res.token);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"customer@food.com\",\n  \"password\": \"password123\"\n}"
+            },
+            "url": "{{baseUrl}}/api/auth/login"
+          }
+        },
+        {
+          "name": "Customer GET Payments (expect 403)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{customerToken}}", "type": "string" }]
+            },
+            "method": "GET",
+            "url": "{{baseUrl}}/api/payments"
+          }
+        }
+      ]
+    }
+  ]
+}
