@@ -72,7 +72,8 @@ export const loginUser = async (req, res, next) => {
         if (error) return res.status(400).json({ message: error.details[0].message });
 
         const { email, password } = req.body;
-        const user = await User.findOne({ email });
+        const normalizedEmail = email.trim().toLowerCase();
+        const user = await User.findOne({ email: normalizedEmail });
 
         if (user && (await bcrypt.compare(password, user.password))) {
             res.json(formatUserResponse(user, generateToken(user._id)));

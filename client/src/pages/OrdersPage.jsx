@@ -16,6 +16,7 @@ export default function OrdersPage() {
   const { isAdmin } = useAuth();
   const navigate = useNavigate();
   const [orders, setOrders] = useState([]);
+  const [payments, setPayments] = useState([]);
   const [firstRestaurantId, setFirstRestaurantId] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -27,8 +28,11 @@ export default function OrdersPage() {
   }, [isAdmin, navigate]);
 
   useEffect(() => {
-    api.getOrders()
-      .then(setOrders)
+    Promise.all([api.getOrders(), api.getMyPayments()])
+      .then(([orderList, paymentList]) => {
+        setOrders(orderList);
+        setPayments(paymentList);
+      })
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
   }, []);
@@ -49,6 +53,12 @@ export default function OrdersPage() {
     ? `/restaurants/${firstRestaurantId}`
     : '/#restaurants';
 
+  const paymentByOrder = payments.reduce((acc, payment) => {
+    const orderId = payment.orderId?._id || payment.orderId;
+    acc[orderId] = payment;
+    return acc;
+  }, {});
+
   return (
     <div className="section">
       <div className="container">
@@ -66,23 +76,35 @@ export default function OrdersPage() {
         ) : (
           <div className="orders-list">
             {orders.map((order) => (
-              <Link key={order._id} to={`/orders/${order._id}`} className="order-card">
-                <div>
-                  <h3>{order.restaurantId?.name || 'Restaurant'}</h3>
-                  <p className="muted">
-                    {new Date(order.createdAt).toLocaleString()} · {order.items.length} items
-                  </p>
-                </div>
-                <div className="order-card-right">
-                  <span
-                    className="status-badge"
-                    style={{ backgroundColor: statusColors[order.status] || '#64748b' }}
-                  >
-                    {order.status}
-                  </span>
-                  <span className="price">${order.totalAmount.toFixed(2)}</span>
-                </div>
-              </Link>
+              (() => {
+                const payment = paymentByOrder[order._id];
+                return (
+                  <Link key={order._id} to={`/orders/${order._id}`} className="order-card">
+                    <div>
+                      <h3>{order.restaurantId?.name || 'Restaurant'}</h3>
+                      <p className="muted">
+                        {new Date(order.createdAt).toLocaleString()} · {order.items.length} items
+                      </p>
+                      <div className="payment-history-line">
+                        <span>{payment?.paymentMethod?.replaceAll('_', ' ') || 'payment'}</span>
+                        <span>Payment: {order.paymentStatus || payment?.status || 'pending'}</span>
+                        {payment?.verificationStatus && payment.verificationStatus !== 'not_required' && (
+                          <span>Verification: {payment.verificationStatus}</span>
+                        )}
+                      </div>
+                    </div>
+                    <div className="order-card-right">
+                      <span
+                        className="status-badge"
+                        style={{ backgroundColor: statusColors[order.status] || '#64748b' }}
+                      >
+                        {order.status}
+                      </span>
+                      <span className="price">${order.totalAmount.toFixed(2)}</span>
+                    </div>
+                  </Link>
+                );
+              })()
             ))}
           </div>
         )}

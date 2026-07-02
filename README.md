@@ -67,6 +67,94 @@ After running `npm run seed`:
 - **Register** (`POST /api/auth/register`): `role` must be `"customer"` or omitted.
 - **Create admin**: login as admin → `POST /api/users` with `"role": "admin"`.
 
+## WaafiPay (local mobile wallet)
+
+FoodExpress supports **WaafiPay** for EVC / ZAAD / SAHAL wallets (Week 6 integration).
+
+### 1. Add credentials to `.env`
+
+```env
+WAAFI_MERCHANT_UID=your_merchant_uid
+WAAFI_API_USER_ID=your_api_user_id
+WAAFI_API_KEY=your_api_key
+WAAFI_BASE_URL=https://sandbox.waafipay.com/asm
+```
+
+Never commit `.env`. Use sandbox first; production URL is `https://api.waafipay.net/asm`.
+
+### 2. Checkout flow
+
+```
+Customer → Checkout UI → POST /api/orders/checkout → WaafiPay API_PURCHASE → Order PAID/FAILED
+```
+
+- Frontend sends `accountNo` (wallet) only — **API keys stay on the server**
+- Backend recalculates total from database prices
+- On `responseCode: 2001` and `state: APPROVED` → order `paymentStatus: paid`
+
+### 3. Sandbox test wallets
+
+| Wallet             | Number          | PIN  |
+|--------------------|-----------------|------|
+| EVCPlus            | 252611111111    | 1212 |
+| ZAAD               | 252631111111    | 1212 |
+| SAHAL              | 252901111111    | 1212 |
+| WAAFI Djibouti     | 25377111111     | 1212 |
+| WAAFI International| 9715111111111   | 1212 |
+
+Wallet numbers must be full international format: digits only, no `+`, no leading zero. The backend accepts 10-20 digit wallet numbers and checks WaafiPay success using `responseCode: 2001` plus `state: APPROVED` (case-insensitive).
+
+### 4. API endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/orders/checkout` | Checkout + WaafiPay when `paymentMethod: "waafi"` |
+| GET | `/api/payments/my-history` | Customer payment history |
+| POST | `/api/payments/:id/refund` | Admin — WaafiPay API_REVERSAL |
+| POST | `/api/payments/:id/verify` | Admin — verify/reject cash or bank transfer |
+
+## Offline payments
+
+FoodExpress also supports **cash** and **bank transfer** checkout. These payments are tracked as pending until an admin verifies them.
+
+### Cash checkout
+
+```json
+{
+  "paymentMethod": "cash_on_delivery",
+  "offlineDetails": {
+    "notes": "Customer will pay cash on delivery"
+  }
+}
+```
+
+### Bank transfer checkout
+
+```json
+{
+  "paymentMethod": "bank_transfer",
+  "offlineDetails": {
+    "bankName": "Salaam Bank",
+    "accountName": "Customer Name",
+    "transferReference": "BANK-REF-12345",
+    "proofUrl": "https://example.com/receipt.png"
+  }
+}
+```
+
+Admin verification:
+
+```json
+{
+  "verificationStatus": "verified",
+  "verificationNote": "Transfer matched bank statement"
+}
+```
+
+When verified, the linked order moves to `paymentStatus: paid` and `status: confirmed`. When rejected, the order moves to `paymentStatus: failed` and `status: cancelled`.
+
+Customers can review payment method, payment status, verification status, and transaction/reference confirmations from their order history and order detail pages.
+
 ## API overview
 
 | Method | Endpoint              | Description              |

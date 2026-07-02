@@ -17,7 +17,7 @@ export default function LoginPage() {
     setError('');
     setLoading(true);
     try {
-      const data = await login(form.email, form.password);
+      const data = await login(form.email.trim().toLowerCase(), form.password);
       const from = location.state?.from?.pathname;
       if (data.role === ROLES.ADMIN) {
         navigate(from?.startsWith('/admin') ? from : '/admin');
@@ -45,7 +45,7 @@ export default function LoginPage() {
             <input
               type="email"
               value={form.email}
-              onChange={(e) => setForm({ ...form, email: e.target.value })}
+              onChange={(e) => setForm({ ...form, email: e.target.value.replace(/\s+/g, '') })}
               required
               placeholder="customer@food.com"
             />

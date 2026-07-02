@@ -177,6 +177,94 @@ Copy `token` → Environment → `adminToken`.
 
 After updating your name on the profile page, the admin sidebar and navbar will show the new name on next save (session refreshes automatically).
 
+## WaafiPay checkout (customer)
+
+**POST** `{{baseUrl}}/api/orders/checkout` with Bearer token (customer login):
+
+```json
+{
+  "deliveryAddress": {
+    "street": "Wadada 1",
+    "city": "Mogadishu",
+    "state": "Banaadir",
+    "zipCode": "001",
+    "country": "Somalia"
+  },
+  "paymentMethod": "waafi",
+  "accountNo": "252611111111"
+}
+```
+
+Success: `responseCode` 2001 + `params.state` APPROVED → order `paymentStatus: paid`.
+
+Sandbox wallets: `252611111111`, `252631111111`, `252901111111`, `25377111111`, `9715111111111` (PIN 1212).
+
+Use full international format only: digits, no `+`, no leading zero. Success means `responseCode` is `2001` and WaafiPay state is `APPROVED` / `approved`.
+
+**Refund (admin):** `POST /api/payments/:id/refund`
+
+## Offline payments (cash / bank transfer)
+
+Cash and bank transfer checkouts create a payment with:
+
+- `status: "pending"`
+- `verificationStatus: "pending"`
+- order `paymentStatus: "pending"`
+
+### Cash checkout
+
+**POST** `{{baseUrl}}/api/orders/checkout` with customer Bearer token:
+
+```json
+{
+  "deliveryAddress": {
+    "street": "Wadada 1",
+    "city": "Mogadishu",
+    "state": "Banaadir",
+    "zipCode": "001",
+    "country": "Somalia"
+  },
+  "paymentMethod": "cash_on_delivery",
+  "offlineDetails": {
+    "notes": "Customer will pay cash on delivery"
+  }
+}
+```
+
+### Bank transfer checkout
+
+```json
+{
+  "deliveryAddress": {
+    "street": "Wadada 1",
+    "city": "Mogadishu",
+    "state": "Banaadir",
+    "zipCode": "001",
+    "country": "Somalia"
+  },
+  "paymentMethod": "bank_transfer",
+  "offlineDetails": {
+    "bankName": "Salaam Bank",
+    "accountName": "Ila Customer",
+    "transferReference": "BANK-REF-12345",
+    "proofUrl": "https://example.com/receipt.png"
+  }
+}
+```
+
+### Verify or reject offline payment (admin)
+
+**POST** `{{baseUrl}}/api/payments/:id/verify`
+
+```json
+{
+  "verificationStatus": "verified",
+  "verificationNote": "Transfer matched bank statement"
+}
+```
+
+Use `"rejected"` to reject the payment. Verified payments confirm the order; rejected payments cancel it.
+
 ## Admin endpoints summary
 
 | Method | URL | Admin only |
@@ -184,6 +272,7 @@ After updating your name on the profile page, the admin sidebar and navbar will 
 | GET | `/api/orders` | Sees all orders |
 | PUT/DELETE | `/api/orders/:id` | Update / delete |
 | GET/POST/PUT/DELETE | `/api/payments` | Yes |
+| POST | `/api/payments/:id/verify` | Verify/reject offline payment |
 | GET/POST/PUT/DELETE | `/api/categories` | Yes |
 | GET/POST/PUT/DELETE | `/api/restaurants` | Yes |
 | GET/POST/PUT/DELETE | `/api/food-items` | Yes |

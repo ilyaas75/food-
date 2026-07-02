@@ -111,21 +111,87 @@ export const orderSchema = Joi.object({
     }).required(),
 });
 
+export const adminOrderSchema = Joi.object({
+    customerId: Joi.string().required(),
+    restaurantId: Joi.string().required(),
+    items: Joi.array().items(Joi.object({
+        foodItemId: Joi.string().required(),
+        quantity: Joi.number().min(1).required(),
+    })).min(1).required(),
+    status: Joi.string()
+        .valid('pending', 'confirmed', 'preparing', 'out-for-delivery', 'delivered', 'cancelled')
+        .default('pending'),
+    paymentStatus: Joi.string()
+        .valid('pending', 'paid', 'failed', 'refunded')
+        .default('pending'),
+    deliveryAddress: Joi.object({
+        street: Joi.string().required(),
+        city: Joi.string().required(),
+        state: Joi.string().required(),
+        zipCode: Joi.string().required(),
+        country: Joi.string().required(),
+    }).required(),
+});
+
 // Naqshadda Lacag-bixinta (Payment Schema)
+const PAYMENT_METHODS = [
+    'credit_card',
+    'paypal',
+    'cash_on_delivery',
+    'cash',
+    'bank_transfer',
+    'waafi',
+    'mwallet',
+];
+const PAYMENT_STATUSES = ['pending', 'completed', 'failed', 'approved', 'refunded'];
+const VERIFICATION_STATUSES = ['not_required', 'pending', 'verified', 'rejected'];
+
+const offlineDetailsSchema = Joi.object({
+    bankName: Joi.string().allow('', null).optional(),
+    accountName: Joi.string().allow('', null).optional(),
+    transferReference: Joi.string().allow('', null).optional(),
+    proofUrl: Joi.string().allow('', null).optional(),
+    cashReceivedBy: Joi.string().allow('', null).optional(),
+    notes: Joi.string().allow('', null).optional(),
+});
+
 export const paymentSchema = Joi.object({
     orderId: Joi.string().required(),
-    paymentMethod: Joi.string().valid('credit_card', 'paypal', 'cash_on_delivery').required(),
+    paymentMethod: Joi.string().valid(...PAYMENT_METHODS).required(),
     amount: Joi.number().min(0).required(),
-    status: Joi.string().valid('pending', 'completed', 'failed').optional(),
+    currency: Joi.string().optional(),
+    status: Joi.string().valid(...PAYMENT_STATUSES).optional(),
+    verificationStatus: Joi.string().valid(...VERIFICATION_STATUSES).optional(),
+    referenceId: Joi.string().optional(),
+    offlineDetails: Joi.when('paymentMethod', {
+        is: 'bank_transfer',
+        then: offlineDetailsSchema
+            .keys({
+                bankName: Joi.string().required(),
+                transferReference: Joi.string().required(),
+            })
+            .required(),
+        otherwise: offlineDetailsSchema.optional(),
+    }),
 });
 
 export const paymentUpdateSchema = Joi.object({
     orderId: Joi.string().optional(),
-    paymentMethod: Joi.string().valid('credit_card', 'paypal', 'cash_on_delivery').optional(),
+    paymentMethod: Joi.string().valid(...PAYMENT_METHODS).optional(),
     amount: Joi.number().min(0).optional(),
-    status: Joi.string().valid('pending', 'completed', 'failed').optional(),
+    currency: Joi.string().optional(),
+    status: Joi.string().valid(...PAYMENT_STATUSES).optional(),
+    verificationStatus: Joi.string().valid(...VERIFICATION_STATUSES).optional(),
     transactionId: Joi.string().allow('', null).optional(),
+    referenceId: Joi.string().allow('', null).optional(),
+    offlineDetails: offlineDetailsSchema.optional(),
+    verificationNote: Joi.string().allow('', null).optional(),
 }).min(1);
+
+export const verifyPaymentSchema = Joi.object({
+    verificationStatus: Joi.string().valid('verified', 'rejected').required(),
+    verificationNote: Joi.string().allow('', null).optional(),
+});
 
 export const deliverySchema = Joi.object({
     orderId: Joi.string().required(),
@@ -150,6 +216,9 @@ export const updateOrderStatusSchema = Joi.object({
 export const orderUpdateSchema = Joi.object({
     status: Joi.string()
         .valid('pending', 'confirmed', 'preparing', 'out-for-delivery', 'delivered', 'cancelled')
+        .optional(),
+    paymentStatus: Joi.string()
+        .valid('pending', 'paid', 'failed', 'refunded')
         .optional(),
     totalAmount: Joi.number().min(0).optional(),
     deliveryAddress: Joi.object({
@@ -229,5 +298,19 @@ export const checkoutSchema = Joi.object({
         zipCode: Joi.string().required(),
         country: Joi.string().required(),
     }).required(),
-    paymentMethod: Joi.string().valid('credit_card', 'paypal', 'cash_on_delivery').default('cash_on_delivery'),
+    paymentMethod: Joi.string()
+        .valid('credit_card', 'paypal', 'cash_on_delivery', 'cash', 'bank_transfer', 'waafi')
+        .default('cash_on_delivery'),
+    accountNo: Joi.when('paymentMethod', {
+        is: 'waafi',
+        then: Joi.string()
+            .pattern(/^\d{10,20}$/)
+            .required()
+            .messages({
+                'string.pattern.base':
+                    'Wallet number must be international format without + or leading zero (10-20 digits, e.g. 252611111111)',
+            }),
+        otherwise: Joi.string().optional().allow('', null),
+    }),
+    offlineDetails: offlineDetailsSchema.optional(),
 });

@@ -7,10 +7,18 @@ const emptyForm = {
   paymentMethod: 'credit_card',
   amount: '',
   status: 'pending',
+  verificationStatus: 'not_required',
+  bankName: '',
+  accountName: '',
+  transferReference: '',
+  proofUrl: '',
+  notes: '',
 };
 
-const METHODS = ['credit_card', 'paypal', 'cash_on_delivery'];
-const STATUSES = ['pending', 'completed', 'failed'];
+const METHODS = ['waafi', 'bank_transfer', 'cash_on_delivery', 'credit_card', 'paypal'];
+const STATUSES = ['pending', 'completed', 'failed', 'approved', 'refunded'];
+const VERIFICATION_STATUSES = ['not_required', 'pending', 'verified', 'rejected'];
+const OFFLINE_METHODS = ['cash_on_delivery', 'cash', 'bank_transfer'];
 
 export default function AdminPaymentsPage() {
   const [payments, setPayments] = useState([]);
@@ -52,6 +60,14 @@ export default function AdminPaymentsPage() {
       paymentMethod: form.paymentMethod,
       amount: Number(form.amount),
       status: form.status,
+      verificationStatus: form.verificationStatus,
+      offlineDetails: {
+        bankName: form.bankName,
+        accountName: form.accountName,
+        transferReference: form.transferReference,
+        proofUrl: form.proofUrl,
+        notes: form.notes,
+      },
     };
     try {
       if (editingId) {
@@ -75,9 +91,26 @@ export default function AdminPaymentsPage() {
       paymentMethod: p.paymentMethod || 'credit_card',
       amount: String(p.amount ?? ''),
       status: p.status || 'pending',
+      verificationStatus: p.verificationStatus || 'not_required',
+      bankName: p.offlineDetails?.bankName || '',
+      accountName: p.offlineDetails?.accountName || '',
+      transferReference: p.offlineDetails?.transferReference || '',
+      proofUrl: p.offlineDetails?.proofUrl || '',
+      notes: p.offlineDetails?.notes || '',
     });
     setMessage('');
     setError('');
+  };
+
+  const handleRefund = async (id) => {
+    if (!confirm('Refund this WaafiPay payment via API_REVERSAL?')) return;
+    try {
+      await api.refundPayment(id);
+      setMessage('Payment refunded');
+      load();
+    } catch (err) {
+      setError(err.message);
+    }
   };
 
   const handleDelete = async (id) => {
@@ -85,6 +118,18 @@ export default function AdminPaymentsPage() {
     try {
       await api.deletePayment(id);
       if (editingId === id) resetForm();
+      load();
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  const handleVerify = async (id, verificationStatus) => {
+    const action = verificationStatus === 'verified' ? 'verify' : 'reject';
+    const verificationNote = prompt(`Optional note for ${action} action`) || '';
+    try {
+      await api.verifyPayment(id, { verificationStatus, verificationNote });
+      setMessage(verificationStatus === 'verified' ? 'Offline payment verified' : 'Offline payment rejected');
       load();
     } catch (err) {
       setError(err.message);
@@ -140,6 +185,43 @@ export default function AdminPaymentsPage() {
             <option key={s} value={s}>{s}</option>
           ))}
         </select>
+        <select
+          value={form.verificationStatus}
+          onChange={(e) => setForm({ ...form, verificationStatus: e.target.value })}
+        >
+          {VERIFICATION_STATUSES.map((s) => (
+            <option key={s} value={s}>{s}</option>
+          ))}
+        </select>
+        {OFFLINE_METHODS.includes(form.paymentMethod) && (
+          <>
+            <input
+              placeholder="Bank name"
+              value={form.bankName}
+              onChange={(e) => setForm({ ...form, bankName: e.target.value })}
+            />
+            <input
+              placeholder="Account name"
+              value={form.accountName}
+              onChange={(e) => setForm({ ...form, accountName: e.target.value })}
+            />
+            <input
+              placeholder="Transfer reference"
+              value={form.transferReference}
+              onChange={(e) => setForm({ ...form, transferReference: e.target.value })}
+            />
+            <input
+              placeholder="Proof URL"
+              value={form.proofUrl}
+              onChange={(e) => setForm({ ...form, proofUrl: e.target.value })}
+            />
+            <input
+              placeholder="Offline notes"
+              value={form.notes}
+              onChange={(e) => setForm({ ...form, notes: e.target.value })}
+            />
+          </>
+        )}
         <div className="admin-form-actions">
           <button type="submit" className="btn btn-primary">{editingId ? 'Save changes' : 'Create payment'}</button>
           {editingId && <button type="button" className="btn btn-outline" onClick={resetForm}>Cancel</button>}
@@ -150,10 +232,14 @@ export default function AdminPaymentsPage() {
         <table className="admin-table">
           <thead>
             <tr>
+              <th>Reference</th>
+              <th>Transaction</th>
               <th>Order</th>
               <th>Method</th>
               <th>Amount</th>
               <th>Status</th>
+              <th>Verification</th>
+              <th>Tracking</th>
               <th>Date</th>
               <th>Actions</th>
             </tr>
@@ -161,13 +247,55 @@ export default function AdminPaymentsPage() {
           <tbody>
             {payments.map((p) => (
               <tr key={p._id}>
+                <td>{p.referenceId || '—'}</td>
+                <td>{p.transactionId || '—'}</td>
                 <td>{p.orderId?._id?.slice(-6) || p.orderId}</td>
                 <td>{p.paymentMethod}</td>
                 <td>${p.amount?.toFixed(2)}</td>
                 <td>{p.status}</td>
+                <td>{p.verificationStatus || 'not_required'}</td>
+                <td>
+                  {p.offlineDetails?.transferReference || p.offlineDetails?.notes || '—'}
+                  {p.offlineDetails?.proofUrl && (
+                    <>
+                      <br />
+                      <a href={p.offlineDetails.proofUrl} target="_blank" rel="noreferrer">Proof</a>
+                    </>
+                  )}
+                </td>
                 <td>{new Date(p.createdAt).toLocaleDateString()}</td>
                 <td>
-                  <AdminRowActions onEdit={() => startEdit(p)} onDelete={() => handleDelete(p._id)} />
+                  <AdminRowActions
+                    onEdit={() => startEdit(p)}
+                    onDelete={() => handleDelete(p._id)}
+                  />
+                  {p.transactionId && p.status === 'approved' && (
+                    <button
+                      type="button"
+                      className="btn btn-outline btn-sm"
+                      onClick={() => handleRefund(p._id)}
+                    >
+                      Refund
+                    </button>
+                  )}
+                  {OFFLINE_METHODS.includes(p.paymentMethod) && p.verificationStatus === 'pending' && (
+                    <div className="admin-row-actions">
+                      <button
+                        type="button"
+                        className="btn btn-outline btn-sm"
+                        onClick={() => handleVerify(p._id, 'verified')}
+                      >
+                        Verify
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-outline btn-sm btn-danger"
+                        onClick={() => handleVerify(p._id, 'rejected')}
+                      >
+                        Reject
+                      </button>
+                    </div>
+                  )}
                 </td>
               </tr>
             ))}

@@ -121,7 +121,11 @@ export default function AdminDashboardPage() {
   }, []);
 
   const metrics = useMemo(() => {
-    const revenue = payments.reduce((sum, p) => sum + (p.amount || 0), 0);
+    const paidStatuses = ['completed', 'approved', 'refunded'];
+    const revenue = payments
+      .filter((p) => paidStatuses.includes(p.status))
+      .reduce((sum, p) => sum + (p.status === 'refunded' ? 0 : p.amount || 0), 0);
+    const pendingPayments = payments.filter((p) => p.verificationStatus === 'pending' || p.status === 'pending').length;
     const pending = orders.filter((o) => o.status === 'pending').length;
     const delivered = orders.filter((o) => o.status === 'delivered').length;
     const customers = users.filter((u) => u.role === 'customer').length;
@@ -131,7 +135,7 @@ export default function AdminDashboardPage() {
       return acc;
     }, {});
 
-    return { revenue, pending, delivered, customers, admins, statusCounts };
+    return { revenue, pending, pendingPayments, delivered, customers, admins, statusCounts };
   }, [orders, payments, users]);
 
   const weeklyData = useMemo(() => getLast7Days(orders), [orders]);
@@ -155,6 +159,44 @@ export default function AdminDashboardPage() {
     ].filter((d) => d.value > 0),
     [metrics]
   );
+
+  const paymentMethodData = useMemo(() => {
+    const labels = {
+      waafi: 'WaafiPay',
+      bank_transfer: 'Bank',
+      cash_on_delivery: 'Cash',
+      cash: 'Cash',
+      credit_card: 'Card',
+      paypal: 'PayPal',
+    };
+
+    return Object.entries(
+      payments.reduce((acc, p) => {
+        acc[p.paymentMethod] = (acc[p.paymentMethod] || 0) + 1;
+        return acc;
+      }, {})
+    ).map(([method, value], index) => ({
+      name: labels[method] || method,
+      value,
+      fill: CHART_PALETTE[index % CHART_PALETTE.length],
+    }));
+  }, [payments]);
+
+  const topRestaurantData = useMemo(() => {
+    const totals = orders.reduce((acc, order) => {
+      const name = order.restaurantId?.name || 'Unknown';
+      acc[name] = {
+        name,
+        orders: (acc[name]?.orders || 0) + 1,
+        revenue: (acc[name]?.revenue || 0) + (order.totalAmount || 0),
+      };
+      return acc;
+    }, {});
+
+    return Object.values(totals)
+      .sort((a, b) => b.revenue - a.revenue)
+      .slice(0, 5);
+  }, [orders]);
 
   const recentOrders = useMemo(
     () => [...orders].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).slice(0, 5),
@@ -470,50 +512,131 @@ export default function AdminDashboardPage() {
 
       <section className="admin-panel admin-panel-charts">
         <div className="admin-panel-head">
-          <h2>Analytics at a glance</h2>
+          <div>
+            <p className="admin-panel-kicker">Live business intelligence</p>
+            <h2>Beautiful analytics dashboard</h2>
+          </div>
           <button type="button" className="admin-panel-link" onClick={() => setPreview('revenue')}>
             <Eye size={14} /> Revenue preview
           </button>
         </div>
-        <div className="dash-charts-row dash-charts-inline">
-          <div className="dash-chart-mini" onClick={() => setPreview('orders')} role="button" tabIndex={0}>
-            <h4>Order status</h4>
-            <ResponsiveContainer width="100%" height={140}>
-              <PieChart>
-                <Pie
-                  data={pieData.length ? pieData : [{ name: '-', value: 1, color: '#e2e8f0' }]}
-                  dataKey="value"
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={35}
-                  outerRadius={55}
-                >
-                  {(pieData.length ? pieData : [{ color: '#e2e8f0' }]).map((e, i) => (
-                    <Cell key={i} fill={e.color || '#e2e8f0'} />
-                  ))}
-                </Pie>
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-          <div className="dash-chart-mini" onClick={() => setPreview('revenue')} role="button" tabIndex={0}>
-            <h4>Revenue</h4>
-            <ResponsiveContainer width="100%" height={140}>
+
+        <div className="dash-analytics-suite">
+          <div className="dash-big-chart dash-glass-card" onClick={() => setPreview('revenue')} role="button" tabIndex={0}>
+            <div className="dash-chart-head">
+              <div>
+                <span className="dash-chart-label">Revenue trend</span>
+                <strong>${metrics.revenue.toFixed(2)}</strong>
+              </div>
+              <span className="dash-chart-chip">Last 7 days</span>
+            </div>
+            <ResponsiveContainer width="100%" height={260}>
               <AreaChart data={weeklyData}>
-                <Area type="monotone" dataKey="revenue" stroke="#16a34a" fill="#16a34a33" strokeWidth={2} />
+                <defs>
+                  <linearGradient id="dashRevenueGlow" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#22c55e" stopOpacity={0.45} />
+                    <stop offset="90%" stopColor="#22c55e" stopOpacity={0.03} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
+                <XAxis dataKey="label" tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false} />
+                <Tooltip content={<CustomTooltip />} />
+                <Area
+                  type="monotone"
+                  dataKey="revenue"
+                  name="revenue"
+                  stroke="#16a34a"
+                  fill="url(#dashRevenueGlow)"
+                  strokeWidth={3}
+                />
               </AreaChart>
             </ResponsiveContainer>
           </div>
-          <div className="dash-chart-mini" onClick={() => setPreview('users')} role="button" tabIndex={0}>
-            <h4>Users</h4>
-            <ResponsiveContainer width="100%" height={140}>
-              <BarChart data={rolePieData} layout="vertical">
-                <Bar dataKey="value" fill="#7c3aed" radius={[0, 4, 4, 0]} />
+
+          <div className="dash-donut-card dash-glass-card" onClick={() => setPreview('orders')} role="button" tabIndex={0}>
+            <div className="dash-chart-head">
+              <div>
+                <span className="dash-chart-label">Order status</span>
+                <strong>{orders.length} orders</strong>
+              </div>
+              <span className="dash-chart-chip">{metrics.pending} pending</span>
+            </div>
+            <div className="dash-donut-wrap">
+              <ResponsiveContainer width="100%" height={210}>
+                <PieChart>
+                  <Pie
+                    data={pieData.length ? pieData : [{ name: 'No data', value: 1, color: '#e2e8f0' }]}
+                    dataKey="value"
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={58}
+                    outerRadius={86}
+                    paddingAngle={4}
+                  >
+                    {(pieData.length ? pieData : [{ name: 'No data', color: '#e2e8f0' }]).map((entry) => (
+                      <Cell key={entry.name} fill={entry.color} />
+                    ))}
+                  </Pie>
+                  <Tooltip />
+                </PieChart>
+              </ResponsiveContainer>
+              <div className="dash-status-legend">
+                {(pieData.length ? pieData : [{ name: 'No orders', value: 0, color: '#94a3b8' }]).map((item) => (
+                  <span key={item.name}>
+                    <i style={{ background: item.color }} />
+                    {item.name} ({item.value})
+                  </span>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="dash-side-card dash-glass-card" onClick={() => setPreview('revenue')} role="button" tabIndex={0}>
+            <div className="dash-chart-head">
+              <div>
+                <span className="dash-chart-label">Payment methods</span>
+                <strong>{payments.length} payments</strong>
+              </div>
+              <span className="dash-chart-chip">{metrics.pendingPayments} pending</span>
+            </div>
+            <ResponsiveContainer width="100%" height={190}>
+              <BarChart data={paymentMethodData.length ? paymentMethodData : [{ name: 'No data', value: 0, fill: '#e2e8f0' }]} layout="vertical">
                 <XAxis type="number" hide />
-                <YAxis type="category" dataKey="name" width={70} tick={{ fontSize: 10 }} />
+                <YAxis type="category" dataKey="name" width={82} tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false} />
+                <Tooltip />
+                <Bar dataKey="value" radius={[0, 8, 8, 0]}>
+                  {(paymentMethodData.length ? paymentMethodData : [{ fill: '#e2e8f0' }]).map((entry, i) => (
+                    <Cell key={entry.name || i} fill={entry.fill} />
+                  ))}
+                </Bar>
               </BarChart>
             </ResponsiveContainer>
           </div>
+
+          <div className="dash-side-card dash-glass-card">
+            <div className="dash-chart-head">
+              <div>
+                <span className="dash-chart-label">Top restaurants</span>
+                <strong>By revenue</strong>
+              </div>
+              <span className="dash-chart-chip">{restaurants.length} partners</span>
+            </div>
+            <div className="dash-top-list">
+              {(topRestaurantData.length ? topRestaurantData : [{ name: 'No restaurant data', orders: 0, revenue: 0 }]).map((restaurant, index) => (
+                <div key={restaurant.name} className="dash-top-item">
+                  <span className="dash-top-rank">{index + 1}</span>
+                  <div>
+                    <strong>{restaurant.name}</strong>
+                    <small>{restaurant.orders} orders</small>
+                  </div>
+                  <span>${restaurant.revenue.toFixed(2)}</span>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
+
         <div className="admin-mini-stats">
           <div className="admin-mini-stat">
             <CheckCircle2 size={18} color="#22c55e" />
@@ -522,6 +645,10 @@ export default function AdminDashboardPage() {
           <div className="admin-mini-stat">
             <CreditCard size={18} color="#e85d04" />
             <span>${metrics.revenue.toFixed(2)} total</span>
+          </div>
+          <div className="admin-mini-stat">
+            <Clock size={18} color="#f59e0b" />
+            <span>{metrics.pendingPayments} pending payments</span>
           </div>
         </div>
       </section>

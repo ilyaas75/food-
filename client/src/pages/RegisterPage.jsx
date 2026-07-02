@@ -20,7 +20,7 @@ export default function RegisterPage() {
     setError('');
     setLoading(true);
     try {
-      await register(form);
+      await register({ ...form, email: form.email.trim().toLowerCase() });
       navigate('/');
     } catch (err) {
       setError(err.message);
@@ -52,7 +52,7 @@ export default function RegisterPage() {
             <input
               type="email"
               value={form.email}
-              onChange={(e) => setForm({ ...form, email: e.target.value })}
+              onChange={(e) => setForm({ ...form, email: e.target.value.replace(/\s+/g, '') })}
               required
             />
           </label>

@@ -11,6 +11,13 @@ const emptyForm = {
 
 const STATUSES = ['assigned', 'picked-up', 'delivered'];
 
+const formatAddress = (address) => {
+  if (!address) return 'No delivery address';
+  return [address.street, address.city, address.state, address.zipCode, address.country]
+    .filter(Boolean)
+    .join(', ');
+};
+
 export default function AdminDeliveryPage() {
   const [deliveries, setDeliveries] = useState([]);
   const [orders, setOrders] = useState([]);
@@ -46,6 +53,34 @@ export default function AdminDeliveryPage() {
   const resetForm = () => {
     setForm(emptyForm);
     setEditingId(null);
+  };
+
+  const deliveryOrderIds = new Set(
+    deliveries.map((delivery) => delivery.orderId?._id || delivery.orderId).filter(Boolean)
+  );
+
+  const paidOrders = orders.filter(
+    (order) =>
+      order.paymentStatus === 'paid' &&
+      !['delivered', 'cancelled'].includes(order.status)
+  );
+
+  const paidOrdersReadyForDelivery = paidOrders.filter((order) => !deliveryOrderIds.has(order._id));
+
+  const selectableOrders = editingId
+    ? orders
+    : paidOrders;
+
+  const selectOrderForDelivery = (orderId) => {
+    const order = orders.find((item) => item._id === orderId);
+    setForm({
+      ...form,
+      orderId,
+      status: 'assigned',
+      vehicleDetails: order?.deliveryAddress ? `To: ${formatAddress(order.deliveryAddress)}` : form.vehicleDetails,
+    });
+    setError('');
+    setMessage('');
   };
 
   const handleSubmit = async (e) => {
@@ -101,9 +136,37 @@ export default function AdminDeliveryPage() {
   return (
     <div>
       <h1>Deliveries</h1>
-      <p className="muted">Assign and manage order deliveries</p>
+      <p className="muted">Assign paid orders and show the delivery destination address</p>
       {error && <p className="error-text">{error}</p>}
       {message && <p className="success-text">{message}</p>}
+
+      <section className="paid-orders-panel">
+        <div className="admin-panel-head">
+          <div>
+            <h2>Paid orders ready for delivery</h2>
+            <p className="muted">Orders only appear here after payment is paid/verified.</p>
+          </div>
+          <span className="admin-panel-preview-tag">{paidOrdersReadyForDelivery.length} ready</span>
+        </div>
+        {paidOrdersReadyForDelivery.length === 0 ? (
+          <p className="muted">No paid orders waiting for delivery.</p>
+        ) : (
+          <div className="paid-orders-grid">
+            {paidOrdersReadyForDelivery.map((order) => (
+              <button
+                type="button"
+                key={order._id}
+                className={form.orderId === order._id ? 'paid-order-card selected' : 'paid-order-card'}
+                onClick={() => selectOrderForDelivery(order._id)}
+              >
+                <strong>Order #{order._id.slice(-6)}</strong>
+                <span>{order.customerId?.name || 'Customer'} · ${order.totalAmount?.toFixed(2)}</span>
+                <small>{formatAddress(order.deliveryAddress)}</small>
+              </button>
+            ))}
+          </div>
+        )}
+      </section>
 
       {editingId && (
         <div className="admin-edit-banner">
@@ -120,9 +183,9 @@ export default function AdminDeliveryPage() {
           required
         >
           <option value="">Select order</option>
-          {orders.map((o) => (
+          {selectableOrders.map((o) => (
             <option key={o._id} value={o._id}>
-              {o._id.slice(-6)} — {o.status}
+              {o._id.slice(-6)} — {o.customerId?.name || 'Customer'} — {formatAddress(o.deliveryAddress)}
             </option>
           ))}
         </select>
@@ -156,6 +219,9 @@ export default function AdminDeliveryPage() {
           <thead>
             <tr>
               <th>Order</th>
+              <th>Customer</th>
+              <th>Destination</th>
+              <th>Payment</th>
               <th>Staff</th>
               <th>Status</th>
               <th>Vehicle</th>
@@ -166,6 +232,9 @@ export default function AdminDeliveryPage() {
             {deliveries.map((d) => (
               <tr key={d._id}>
                 <td>{d.orderId?._id?.slice(-6) || d.orderId}</td>
+                <td>{d.orderId?.customerId?.name || '—'}</td>
+                <td>{formatAddress(d.orderId?.deliveryAddress)}</td>
+                <td>{d.orderId?.paymentStatus || '—'}</td>
                 <td>{d.deliveryStaffId?.name || '—'}</td>
                 <td>{d.status}</td>
                 <td>{d.vehicleDetails || '—'}</td>

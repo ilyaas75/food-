@@ -1,8 +1,45 @@
 import Order from './order.model.js';
 import Cart from '../cart/cart.model.js';
 import Payment from '../payments/payment.model.js';
-import { orderSchema, checkoutSchema, orderUpdateSchema } from '../../utils/validators.js';
+import FoodItem from '../food-items/food-item.model.js';
+import { initiatePurchase, isWaafiPurchaseApproved } from '../payments/waafi.service.js';
+import { orderSchema, adminOrderSchema, checkoutSchema, orderUpdateSchema } from '../../utils/validators.js';
 import { ROLES } from '../../constants/roles.js';
+
+const DELIVERY_FEE = 2.99;
+const OFFLINE_PAYMENT_METHODS = ['cash_on_delivery', 'cash', 'bank_transfer'];
+
+const populateOrder = (orderId) =>
+    Order.findById(orderId)
+        .populate('customerId', 'name')
+        .populate('restaurantId', 'name')
+        .populate('items.foodItemId', 'name');
+
+const buildCartOrderItems = async (cart) => {
+    const restaurantId = cart.items[0].foodItemId.restaurantId.toString();
+    const orderItems = [];
+
+    for (const item of cart.items) {
+        const food = item.foodItemId;
+        if (!food || !food.isAvailable) {
+            throw Object.assign(new Error(`${food?.name || 'Item'} is not available`), { statusCode: 400 });
+        }
+        if (food.restaurantId.toString() !== restaurantId) {
+            throw Object.assign(
+                new Error('All items must be from the same restaurant'),
+                { statusCode: 400 }
+            );
+        }
+        orderItems.push({
+            foodItemId: food._id,
+            quantity: item.quantity,
+            price: food.price,
+        });
+    }
+
+    const totalAmount = orderItems.reduce((sum, item) => sum + item.price * item.quantity, 0);
+    return { restaurantId, orderItems, totalAmount };
+};
 
 export const createOrder = async (req, res, next) => {
     try {
@@ -19,6 +56,52 @@ export const createOrder = async (req, res, next) => {
     }
 };
 
+export const adminCreateOrder = async (req, res, next) => {
+    try {
+        const { error } = adminOrderSchema.validate(req.body);
+        if (error) return res.status(400).json({ message: error.details[0].message });
+
+        const orderItems = [];
+
+        for (const item of req.body.items) {
+            const foodItem = await FoodItem.findById(item.foodItemId);
+            if (!foodItem) {
+                return res.status(404).json({ message: 'Food item not found' });
+            }
+            if (foodItem.restaurantId.toString() !== req.body.restaurantId) {
+                return res.status(400).json({
+                    message: 'All order items must belong to the selected restaurant',
+                });
+            }
+
+            orderItems.push({
+                foodItemId: foodItem._id,
+                quantity: item.quantity,
+                price: foodItem.price,
+            });
+        }
+
+        const itemsTotal = orderItems.reduce((sum, item) => sum + item.price * item.quantity, 0);
+        const totalAmount = Math.round((itemsTotal + DELIVERY_FEE) * 100) / 100;
+
+        const order = await Order.create({
+            customerId: req.body.customerId,
+            restaurantId: req.body.restaurantId,
+            items: orderItems,
+            totalAmount,
+            status: req.body.status,
+            paymentStatus: req.body.paymentStatus,
+            deliveryAddress: req.body.deliveryAddress,
+            referenceId: `ORD-${Date.now()}`,
+        });
+
+        const populatedOrder = await populateOrder(order._id);
+        res.status(201).json(populatedOrder);
+    } catch (error) {
+        next(error);
+    }
+};
+
 export const checkoutFromCart = async (req, res, next) => {
     try {
         const { error } = checkoutSchema.validate(req.body);
@@ -29,25 +112,10 @@ export const checkoutFromCart = async (req, res, next) => {
             return res.status(400).json({ message: 'Cart is empty' });
         }
 
-        const restaurantId = cart.items[0].foodItemId.restaurantId.toString();
-        const orderItems = [];
-
-        for (const item of cart.items) {
-            const food = item.foodItemId;
-            if (!food || !food.isAvailable) {
-                return res.status(400).json({ message: `${food?.name || 'Item'} is not available` });
-            }
-            if (food.restaurantId.toString() !== restaurantId) {
-                return res.status(400).json({ message: 'All items must be from the same restaurant' });
-            }
-            orderItems.push({
-                foodItemId: food._id,
-                quantity: item.quantity,
-                price: food.price,
-            });
-        }
-
-        const totalAmount = orderItems.reduce((sum, item) => sum + item.price * item.quantity, 0);
+        const { restaurantId, orderItems, totalAmount: itemsTotal } = await buildCartOrderItems(cart);
+        const totalAmount = Math.round((itemsTotal + DELIVERY_FEE) * 100) / 100;
+        const referenceId = `ORD-${Date.now()}`;
+        const paymentMethod = req.body.paymentMethod;
 
         const order = await Order.create({
             customerId: req.user._id,
@@ -55,25 +123,97 @@ export const checkoutFromCart = async (req, res, next) => {
             items: orderItems,
             totalAmount,
             deliveryAddress: req.body.deliveryAddress,
+            referenceId,
+            paymentStatus: 'pending',
+            status: 'pending',
         });
 
-        await Payment.create({
-            orderId: order._id,
-            paymentMethod: req.body.paymentMethod,
-            amount: totalAmount,
-            status: req.body.paymentMethod === 'cash_on_delivery' ? 'pending' : 'completed',
-        });
+        let payment;
+        let paymentMessage = 'Order placed';
+
+        if (paymentMethod === 'waafi') {
+            const accountNo = req.body.accountNo.replace(/\s+/g, '');
+            const waafiResponse = await initiatePurchase({
+                accountNo,
+                amount: totalAmount,
+                currency: 'USD',
+                referenceId,
+                description: `FoodExpress order ${referenceId}`,
+            });
+
+            const isApproved = isWaafiPurchaseApproved(waafiResponse);
+
+            payment = await Payment.create({
+                orderId: order._id,
+                paymentMethod: 'waafi',
+                amount: totalAmount,
+                currency: 'USD',
+                referenceId,
+                transactionId: waafiResponse.params?.transactionId || null,
+                status: isApproved ? 'approved' : 'failed',
+                waafiResponse,
+            });
+
+            order.paymentStatus = isApproved ? 'paid' : 'failed';
+            order.status = isApproved ? 'confirmed' : 'cancelled';
+            await order.save();
+
+            if (!isApproved) {
+                const populatedOrder = await populateOrder(order._id);
+                return res.status(400).json({
+                    status: false,
+                    message: waafiResponse.responseMsg || 'Payment failed',
+                    data: { order: populatedOrder, payment },
+                });
+            }
+
+            paymentMessage = 'Payment successful';
+        } else if (OFFLINE_PAYMENT_METHODS.includes(paymentMethod)) {
+            payment = await Payment.create({
+                orderId: order._id,
+                paymentMethod,
+                amount: totalAmount,
+                currency: 'USD',
+                referenceId,
+                status: 'pending',
+                verificationStatus: 'pending',
+                offlineDetails: req.body.offlineDetails || {},
+            });
+            order.paymentStatus = 'pending';
+            await order.save();
+            paymentMessage =
+                paymentMethod === 'bank_transfer'
+                    ? 'Bank transfer submitted for verification'
+                    : 'Cash payment will be verified by admin';
+        } else {
+            payment = await Payment.create({
+                orderId: order._id,
+                paymentMethod,
+                amount: totalAmount,
+                currency: 'USD',
+                referenceId,
+                status: 'completed',
+                verificationStatus: 'not_required',
+            });
+            order.paymentStatus = 'paid';
+            order.status = 'confirmed';
+            await order.save();
+        }
 
         cart.items = [];
         await cart.save();
 
-        const populatedOrder = await Order.findById(order._id)
-            .populate('customerId', 'name')
-            .populate('restaurantId', 'name')
-            .populate('items.foodItemId', 'name');
+        const populatedOrder = await populateOrder(order._id);
 
-        res.status(201).json(populatedOrder);
+        res.status(201).json({
+            status: true,
+            message: paymentMessage,
+            data: { order: populatedOrder, payment },
+        });
     } catch (error) {
+        if (error.statusCode) {
+            return res.status(error.statusCode).json({ message: error.message });
+        }
         next(error);
     }
 };
